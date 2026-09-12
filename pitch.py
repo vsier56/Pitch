@@ -81,16 +81,29 @@ def registrar_estadio_faltante(nombre_equipo):
 
 # --- ESTILOS CSS (MODO KIOSCO) ---
 st.markdown("""
+    <!-- Descargamos la fuente Inter directamente como si fuera una web normal -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
     <style>
+        /* El asterisco (*) obliga a TODOS los elementos a usar esta fuente */
+        * {
+            font-family: 'Inter', sans-serif !important;
+        }
+        
         #MainMenu, header, footer {visibility: hidden;}
+        
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 1rem !important;
             max-width: 98% !important;
         }
-        html, body, [class*="css"] {
+        
+        html, body {
             font-size: 22px !important;
         }
+        
         .header-container {
             display: flex;
             align-items: center;
