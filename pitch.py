@@ -119,25 +119,36 @@ if not matches:
     st.title("Pitch")
     st.info("No hay datos disponibles en la API hoy.")
 else:
-    # 1. Agrupar partidos por competición
+    # Agrupar partidos por competición
     partidos_por_liga = {}
     ligas_fav = preferencias.get("ligas", [])
     equipos_fav = preferencias.get("equipos", [])
     
+    # Diccionario para "traducir" los nombres sosos de la API a nombres comerciales
+    nombres_comerciales = {
+        "Primera Division": "LaLiga EA Sports",
+        # Puedes añadir más ligas aquí en el futuro si quieres
+    }
+    
     for m in matches:
-        comp_name = m['competition']['name']
+        comp_name_api = m['competition']['name']
         local = m['homeTeam']['name']
         visitante = m['awayTeam']['name']
         
-        if comp_name in ligas_fav or local in equipos_fav or visitante in equipos_fav:
-            if comp_name not in partidos_por_liga:
-                partidos_por_liga[comp_name] = {
+        # Filtramos usando el nombre original que entiende la API
+        if comp_name_api in ligas_fav or local in equipos_fav or visitante in equipos_fav:
+            
+            # Traducimos el nombre solo para mostrarlo bonito en la pantalla
+            comp_name_visual = nombres_comerciales.get(comp_name_api, comp_name_api)
+            
+            if comp_name_visual not in partidos_por_liga:
+                partidos_por_liga[comp_name_visual] = {
                     "emblem": m['competition'].get('emblem', ''),
                     "matches": []
                 }
-            partidos_por_liga[comp_name]["matches"].append(m)
+            partidos_por_liga[comp_name_visual]["matches"].append(m)
 
-    # 2. Paginación Matemática (Chunking)
+    # Paginación Matemática (Chunking)
     paginas_a_mostrar = []
     
     for nombre_liga, datos in partidos_por_liga.items():
@@ -157,7 +168,7 @@ else:
                 "pag_total": total_paginas
             })
 
-    # 3. Renderizado de la página activa
+    # Renderizado de la página activa
     if not paginas_a_mostrar:
         st.title("Pitch")
         st.warning("Hoy no hay partidos de tus ligas o equipos favoritos.")
@@ -166,8 +177,12 @@ else:
         indice_pagina = ciclo_actual % len(paginas_a_mostrar)
         pagina_activa = paginas_a_mostrar[indice_pagina]
         
-        # --- ENCABEZADO ---
-        logo_comp_html = f'<img src="{pagina_activa["emblema"]}" height="50" style="margin-right: 15px; vertical-align: middle;">' if pagina_activa["emblema"] else ''
+       # --- ENCABEZADO ---
+        # Detectamos si es la Premier para hacer su logo más grande
+        altura_logo = "90" if pagina_activa["liga"] == "Premier League" else "50"
+        
+        logo_comp_html = f'<img src="{pagina_activa["emblema"]}" height="{altura_logo}" style="margin-right: 15px; vertical-align: middle;">' if pagina_activa["emblema"] else ''
+        
         texto_paginacion = f"Pág {pagina_activa['pag_actual']} de {pagina_activa['pag_total']}" if pagina_activa['pag_total'] > 1 else ""
         
         # Inyectamos el clima al lado del título
