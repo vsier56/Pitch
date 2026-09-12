@@ -3,6 +3,7 @@ import requests
 from datetime import datetime
 import json
 import os
+import base64
 from streamlit_autorefresh import st_autorefresh
 from dotenv import load_dotenv 
 
@@ -79,6 +80,25 @@ def registrar_estadio_faltante(nombre_equipo):
         with open(archivo_faltantes, "a", encoding="utf-8") as f:
             f.write(f"{nombre_equipo}\n")
 
+def obtener_fecha_actual():
+    dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+    
+    hoy = datetime.now()
+    nombre_dia = dias[hoy.weekday()]
+    numero_dia = hoy.day
+    nombre_mes = meses[hoy.month - 1]
+    
+    return f"{nombre_dia}, {numero_dia} {nombre_mes}"
+
+def cargar_logo_local(ruta):
+    try:
+        with open(ruta, "rb") as img_file:
+            codigo_b64 = base64.b64encode(img_file.read()).decode()
+            return f"data:image/png;base64,{codigo_b64}"
+    except FileNotFoundError:
+        return "" # Si no encuentra el archivo, no rompe nada
+
 # --- ESTILOS CSS (MODO KIOSCO) ---
 st.markdown("""
     <!-- Descargamos la fuente Inter directamente como si fuera una web normal -->
@@ -118,6 +138,7 @@ st.markdown("""
 preferencias = cargar_preferencias()
 estadios_db = cargar_estadios()
 clima_actual = obtener_tiempo()
+fecha_hoy = obtener_fecha_actual()
 
 if preferencias is None:
     st.info("Por favor, configura Pitch primero. (Crea el archivo preferencias.json)")
@@ -198,17 +219,29 @@ else:
         
         texto_paginacion = f"Pág {pagina_activa['pag_actual']} de {pagina_activa['pag_total']}" if pagina_activa['pag_total'] > 1 else ""
         
-        # Inyectamos el clima al lado del título
-        header_html = f"""
-        <div class="header-container">
-            <div style="font-size: 2.5rem; font-weight: bold; color: #fff; width: 250px; display: flex; flex-direction: column; line-height: 1.1;">
-                Pitch
-                <span style="font-size: 1.2rem; color: #aaa; font-weight: normal; margin-top: 5px;">{clima_actual}</span>
+        # Cargamos nuestro logo (si falla o no existe, pondrá el emoji por defecto)
+        logo_url = cargar_logo_local("logo.png")
+        mi_logo_html = f'<img src="{logo_url}" height="100" style="margin-right: 10px; vertical-align: middle;">' if logo_url else "⚽"
+
+        # Inyectamos logo a la izquierda, y fecha + clima a la derecha
+        header_html = f"""<div class="header-container">
+            <div style="width: 300px; display: flex; flex-direction: column; justify-content: center; line-height: 1.1;">
+                <div style="font-size: 2.5rem; font-weight: bold; color: #fff; display: flex; align-items: center;">
+                    {mi_logo_html} Pitch
+                </div>
             </div>
-            <div style="font-size: 2rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1;">{logo_comp_html} {pagina_activa["liga"]}</div>
-            <div style="width: 250px; text-align: right; color: #888; font-size: 1.4rem; font-weight: bold;">{texto_paginacion}</div>
-        </div>
-        """
+            <div style="font-size: 2rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1;">
+                {logo_comp_html} {pagina_activa["liga"]}
+            </div>
+            <div style="width: 300px; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1;">
+                <div style="white-space: nowrap; display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 1.4rem; font-weight: bold; color: #ddd;">{fecha_hoy}</span>
+                    <span style="font-size: 1.4rem; color: #555;">|</span>
+                    <span style="font-size: 1.2rem; color: #aaa; font-weight: normal;">{clima_actual}</span>
+                </div>
+                <span style="font-size: 1.1rem; color: #888; font-weight: normal; margin-top: 5px;">{texto_paginacion}</span>
+            </div>
+            </div>"""
         st.markdown(header_html, unsafe_allow_html=True)
         
         # --- FILAS DE PARTIDOS ---
@@ -248,7 +281,7 @@ else:
             else:
                 estado_visual = f" {hora}"
                 
-            col_estadio, col_partido, col_estado = st.columns([1.5, 3, 1.5]) 
+            col_estadio, col_partido, col_estado = st.columns([1.5, 3, 1.5], vertical_alignment="center") 
             
             with col_estadio:
                 st.markdown(f"<div style='height: 100%; display: flex; align-items: center; color: #aaa; font-size: 1.2rem;'>{estadio}</div>", unsafe_allow_html=True)
