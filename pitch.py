@@ -15,7 +15,7 @@ st.set_page_config(page_title="Pitch", layout="wide")
 API_KEY = os.environ.get("FOOTBALL_API_KEY", "TU_API_TOKEN_AQUI")
 URL = "https://api.football-data.org/v4/matches"
 ARCHIVO_PREFS = "preferencias.json"
-MAX_PARTIDOS = 5 # Número máximo de partidos que caben en tu pantalla
+MAX_PARTIDOS = 4 # Número máximo de partidos que caben en tu pantalla
 
 @st.cache_data(ttl=60)
 def obtener_partidos():
@@ -104,12 +104,15 @@ st.markdown("""
     <!-- Descargamos la fuente Inter directamente como si fuera una web normal -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@400&display=swap" rel="stylesheet">   
     <style>
         /* El asterisco (*) obliga a TODOS los elementos a usar esta fuente */
         * {
             font-family: 'Inter', sans-serif !important;
+        }
+        /* Excepción: Obliga a usar Space Grotesk a esta clase y a todo lo que haya dentro de ella */
+        .fuente-estadio, .fuente-estadio * {
+            font-family: 'Space Grotesk', sans-serif !important;
         }
         
         #MainMenu, header, footer {visibility: hidden;}
@@ -121,7 +124,7 @@ st.markdown("""
         }
         
         html, body {
-            font-size: 22px !important;
+            font-size: 14px !important;
         }
         
         .header-container {
@@ -153,15 +156,25 @@ if not matches:
     st.title("Pitch")
     st.info("No hay datos disponibles en la API hoy.")
 else:
-    # Agrupar partidos por competición
+    # 1. Agrupar partidos por competición
     partidos_por_liga = {}
     ligas_fav = preferencias.get("ligas", [])
     equipos_fav = preferencias.get("equipos", [])
     
+    # --- FUNCIÓN DE BÚSQUEDA FLEXIBLE ---
+    def es_equipo_fav(nombre_api, lista_favoritos):
+        nombre_api_lower = nombre_api.lower()
+        for fav in lista_favoritos:
+            # Comprueba si tu palabra clave (ej: "Betis") está dentro del nombre de la API
+            if fav.lower() in nombre_api_lower:
+                return True
+        return False
+    # ------------------------------------
+    
     # Diccionario para "traducir" los nombres sosos de la API a nombres comerciales
     nombres_comerciales = {
         "Primera Division": "LaLiga EA Sports",
-        # Puedes añadir más ligas aquí en el futuro si quieres
+        "Championship": "Sky Bet Championship"
     }
     
     for m in matches:
@@ -169,8 +182,8 @@ else:
         local = m['homeTeam']['name']
         visitante = m['awayTeam']['name']
         
-        # Filtramos usando el nombre original que entiende la API
-        if comp_name_api in ligas_fav or local in equipos_fav or visitante in equipos_fav:
+        # Filtramos usando la nueva búsqueda inteligente
+        if comp_name_api in ligas_fav or es_equipo_fav(local, equipos_fav) or es_equipo_fav(visitante, equipos_fav):
             
             # Traducimos el nombre solo para mostrarlo bonito en la pantalla
             comp_name_visual = nombres_comerciales.get(comp_name_api, comp_name_api)
@@ -213,7 +226,7 @@ else:
         
        # --- ENCABEZADO ---
         # Detectamos si es la Premier para hacer su logo más grande
-        altura_logo = "90" if pagina_activa["liga"] == "Premier League" else "50"
+        altura_logo = "60" if pagina_activa["liga"] == "Premier League" else "35"
         
         logo_comp_html = f'<img src="{pagina_activa["emblema"]}" height="{altura_logo}" style="margin-right: 15px; vertical-align: middle;">' if pagina_activa["emblema"] else ''
         
@@ -221,25 +234,25 @@ else:
         
         # Cargamos nuestro logo (si falla o no existe, pondrá el emoji por defecto)
         logo_url = cargar_logo_local("logo.png")
-        mi_logo_html = f'<img src="{logo_url}" height="100" style="margin-right: 10px; vertical-align: middle;">' if logo_url else "⚽"
+        mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">' if logo_url else "⚽"
 
-        # Inyectamos logo a la izquierda, y fecha + clima a la derecha
-        header_html = f"""<div class="header-container">
-            <div style="width: 300px; display: flex; flex-direction: column; justify-content: center; line-height: 1.1;">
-                <div style="font-size: 2.5rem; font-weight: bold; color: #fff; display: flex; align-items: center;">
-                    {mi_logo_html} Pitch
-                </div>
+        # Encabezado fluido y responsivo para pantallas compactas
+        header_html = f"""<div class="header-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div style="flex: 1; display: flex; align-items: center;">
+            <div style="font-size: 1.6rem; font-weight: bold; color: #fff; display: flex; align-items: center;">
+            {mi_logo_html} Pitch
             </div>
-            <div style="font-size: 2rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1;">
-                {logo_comp_html} {pagina_activa["liga"]}
             </div>
-            <div style="width: 300px; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1;">
-                <div style="white-space: nowrap; display: flex; align-items: center; gap: 12px;">
-                    <span style="font-size: 1.4rem; font-weight: bold; color: #ddd;">{fecha_hoy}</span>
-                    <span style="font-size: 1.4rem; color: #555;">|</span>
-                    <span style="font-size: 1.2rem; color: #aaa; font-weight: normal;">{clima_actual}</span>
-                </div>
-                <span style="font-size: 1.1rem; color: #888; font-weight: normal; margin-top: 5px;">{texto_paginacion}</span>
+            <div style="font-size: 1.4rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1.2; text-align: center;">
+            {logo_comp_html} {pagina_activa["liga"]}
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: flex-end;">
+            <div style="white-space: nowrap; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.1rem; font-weight: bold; color: #ddd;">{fecha_hoy}</span>
+            <span style="font-size: 1.1rem; color: #555;">|</span>
+            <span style="font-size: 1rem; color: #aaa; font-weight: normal;">{clima_actual}</span>
+            </div>
+            <span style="font-size: 0.9rem; color: #888; font-weight: normal; margin-top: 4px;">{texto_paginacion}</span>
             </div>
             </div>"""
         st.markdown(header_html, unsafe_allow_html=True)
@@ -284,8 +297,9 @@ else:
             col_estadio, col_partido, col_estado = st.columns([1.5, 3, 1.5], vertical_alignment="center") 
             
             with col_estadio:
-                st.markdown(f"<div style='height: 100%; display: flex; align-items: center; color: #aaa; font-size: 1.2rem;'>{estadio}</div>", unsafe_allow_html=True)
-                
+                st.markdown(f'<div class="fuente-estadio" style="text-align: left; color: #fff; font-size: 1.1em; font-weight: 400;">{estadio}</div>', unsafe_allow_html=True)
+                #st.markdown(f"<div style='text-align: left; color: #fff; font-size: 1.1em; font-family: \"Titillium Web\", sans-serif !important; font-weight: 400;'>{estadio}</div>", unsafe_allow_html=True)            
+                #st.markdown(f'<div style="text-align: left; color: #fff; font-size: 1.1em; font-family: \'Space Grotesk\', sans-serif !important; font-weight: 400;">{estadio}</div>', unsafe_allow_html=True)    
             with col_partido:
                 if estado in ["IN_PLAY", "PAUSED", "FINISHED"]:
                     goles_local = match.get('score', {}).get('fullTime', {}).get('home')
@@ -297,7 +311,7 @@ else:
                 else:
                     elemento_central = '<span style="color: #555; font-size: 1.5rem; margin: 0 30px;">vs</span>'
 
-                html_equipos = f'<div style="display: flex; align-items: center; justify-content: center; height: 100%;"><img src="{escudo_local}" width="90" style="display: block;">{elemento_central}<img src="{escudo_visitante}" width="90" style="display: block;"></div>'                
+                html_equipos = f'<div style="display: flex; align-items: center; justify-content: center; height: 100%;"><img src="{escudo_local}" width="50" style="display: block;">{elemento_central}<img src="{escudo_visitante}" width="50" style="display: block;"></div>'                
                 st.markdown(html_equipos, unsafe_allow_html=True)
                 
             with col_estado:
