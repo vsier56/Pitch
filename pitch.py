@@ -142,6 +142,7 @@ preferencias = cargar_preferencias()
 estadios_db = cargar_estadios()
 clima_actual = obtener_tiempo()
 fecha_hoy = obtener_fecha_actual()
+hora_actual = datetime.now().strftime("%H:%M")
 
 if preferencias is None:
     st.info("Por favor, configura Pitch primero. (Crea el archivo preferencias.json)")
@@ -236,11 +237,11 @@ else:
         logo_url = cargar_logo_local("logo.png")
         mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">' if logo_url else "⚽"
 
-        # Encabezado fluido y responsivo para pantallas compactas
+        # Encabezado con Reloj a la izquierda en lugar del nombre
         header_html = f"""<div class="header-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
             <div style="flex: 1; display: flex; align-items: center;">
-            <div style="font-size: 1.6rem; font-weight: bold; color: #fff; display: flex; align-items: center;">
-            {mi_logo_html} Pitch
+            <div style="font-size: 2.2rem; font-weight: bold; color: #fff; display: flex; align-items: center; font-variant-numeric: tabular-nums;">
+            {mi_logo_html} <span style="margin-left: 8px;">{hora_actual}</span>
             </div>
             </div>
             <div style="font-size: 1.4rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1.2; text-align: center;">
