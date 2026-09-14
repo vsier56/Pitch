@@ -101,25 +101,21 @@ def cargar_logo_local(ruta):
 
 # --- ESTILOS CSS (MODO KIOSCO) ---
 st.markdown("""
-    <!-- Descargamos la fuente Inter directamente como si fuera una web normal -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@400&display=swap" rel="stylesheet">   
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">   
     <style>
-        /* El asterisco (*) obliga a TODOS los elementos a usar esta fuente */
+        /* 1. Todo el panel usa Space Grotesk por defecto */
         * {
-            font-family: 'Inter', sans-serif !important;
-        }
-        /* Excepción: Obliga a usar Space Grotesk a esta clase y a todo lo que haya dentro de ella */
-        .fuente-estadio, .fuente-estadio * {
             font-family: 'Space Grotesk', sans-serif !important;
         }
         
         #MainMenu, header, footer {visibility: hidden;}
         
+        /* 2. Subimos el panel pegándolo arriba y dejamos margen abajo para el Ticker */
         .block-container {
-            padding-top: 1rem !important;
-            padding-bottom: 1rem !important;
+            padding-top: 0rem !important; 
+            padding-bottom: 4rem !important;
             max-width: 98% !important;
         }
         
@@ -134,6 +130,29 @@ st.markdown("""
             margin-bottom: 2rem;
             border-bottom: 2px solid #333;
             padding-bottom: 1rem;
+            margin-top: 0;
+        }
+
+        /* 3. Clase exclusiva para que el marcador destaque */
+        .fuente-marcador {
+            font-family: 'Roboto Mono', monospace !important;
+        }
+
+        /* 4. Animación para el punto pulsante de los partidos en directo */
+        @keyframes latido-verde {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(57, 255, 20, 0.7); }
+            70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(57, 255, 20, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(57, 255, 20, 0); }
+        }
+        
+        .punto-directo {
+            width: 12px;
+            height: 12px;
+            background-color: #39FF14; /* Verde Neón */
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+            animation: latido-verde 2s infinite;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -235,7 +254,7 @@ else:
         
         # Cargamos nuestro logo (si falla o no existe, pondrá el emoji por defecto)
         logo_url = cargar_logo_local("logo.png")
-        mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">' if logo_url else "⚽"
+        mi_logo_html = f'<img src="{logo_url}" height="60" style="margin-right: 10px; vertical-align: middle;">' if logo_url else "⚽"
 
         # Encabezado con Reloj a la izquierda en lugar del nombre
         header_html = f"""<div class="header-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
@@ -287,20 +306,23 @@ else:
             hora = local_time.strftime("%H:%M")
             
             if estado == "IN_PLAY":
-                estado_visual = "EN JUEGO"
+                # Verde neón brillante con el punto pulsante
+                estado_html = '<div style="color: #39FF14; display: flex; align-items: center;"><span class="punto-directo"></span> EN JUEGO</div>'
             elif estado == "PAUSED":
-                estado_visual = "DESCANSO"
+                # Ámbar/Naranja neutro, sin animar
+                estado_html = '<div style="color: #FFB347;">DESCANSO</div>'
             elif estado == "FINISHED":
-                estado_visual = "FINALIZADO"
+                # Gris muy apagado, se funde con el fondo
+                estado_html = '<div style="color: #555555;">FINALIZADO</div>'
             else:
-                estado_visual = f" {hora}"
+                # Hora del partido (gris claro)
+                estado_html = f'<div style="color: #aaaaaa;">{hora}</div>'
                 
             col_estadio, col_partido, col_estado = st.columns([1.5, 3, 1.5], vertical_alignment="center") 
             
             with col_estadio:
-                st.markdown(f'<div class="fuente-estadio" style="text-align: left; color: #fff; font-size: 1.1em; font-weight: 400;">{estadio}</div>', unsafe_allow_html=True)
-                #st.markdown(f"<div style='text-align: left; color: #fff; font-size: 1.1em; font-family: \"Titillium Web\", sans-serif !important; font-weight: 400;'>{estadio}</div>", unsafe_allow_html=True)            
-                #st.markdown(f'<div style="text-align: left; color: #fff; font-size: 1.1em; font-family: \'Space Grotesk\', sans-serif !important; font-weight: 400;">{estadio}</div>', unsafe_allow_html=True)    
+                st.markdown(f'<div style="text-align: left; color: #aaaaaa; font-size: 1.1em; font-weight: 400;">{estadio}</div>', unsafe_allow_html=True)    
+            
             with col_partido:
                 if estado in ["IN_PLAY", "PAUSED", "FINISHED"]:
                     goles_local = match.get('score', {}).get('fullTime', {}).get('home')
@@ -308,7 +330,7 @@ else:
                     goles_local = goles_local if goles_local is not None else 0
                     goles_visitante = goles_visitante if goles_visitante is not None else 0
                     
-                    elemento_central = f'<div style="background-color: #222; border-radius: 8px; padding: 5px 25px; margin: 0 20px; border: 1px solid #444; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"><span style="font-size: 2.2rem; font-weight: bold; color: #fff; font-family: monospace;">{goles_local} - {goles_visitante}</span></div>'
+                    elemento_central = f'<div style="background-color: #222; border-radius: 8px; padding: 5px 25px; margin: 0 20px; border: 1px solid #444; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"><span class="fuente-marcador" style="font-size: 2.2rem; font-weight: bold; color: #fff;">{goles_local} - {goles_visitante}</span></div>'
                 else:
                     elemento_central = '<span style="color: #555; font-size: 1.5rem; margin: 0 30px;">vs</span>'
 
@@ -316,6 +338,6 @@ else:
                 st.markdown(html_equipos, unsafe_allow_html=True)
                 
             with col_estado:
-                st.markdown(f"<div style='height: 100%; display: flex; align-items: center; justify-content: flex-end; font-size: 1.4rem; font-weight: bold;'>{estado_visual}</div>", unsafe_allow_html=True)
-                
+                # Quitamos el texto duro y metemos el HTML dinámico que acabamos de crear
+                st.markdown(f"<div style='height: 100%; display: flex; align-items: center; justify-content: flex-end; font-size: 1.4rem; font-weight: bold;'>{estado_html}</div>", unsafe_allow_html=True)    
             st.divider()
