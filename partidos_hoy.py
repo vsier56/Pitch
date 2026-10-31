@@ -1,6 +1,9 @@
 import requests
 from datetime import datetime
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuración de la API
 API_KEY = os.environ.get("FOOTBALL_API_KEY", "TU_API_TOKEN_AQUI")
@@ -12,7 +15,11 @@ headers = {
 
 def obtener_partidos_hoy():
     print("Consultando el calendario de hoy...")
-    response = requests.get(URL, headers=headers)
+    try:
+        response = requests.get(URL, headers=headers, timeout=5)
+    except requests.RequestException as e:
+        print(f"Error de conexión: {e}")
+        return
 
     # Si la petición es exitosa (código 200)
     if response.status_code == 200:

@@ -24,20 +24,21 @@ MAX_PARTIDOS = 4 # Número máximo de partidos que caben en tu pantalla
 @st.cache_data(ttl=60, show_spinner=False)
 def obtener_partidos():
     headers = {"X-Auth-Token": API_KEY}
-    response = requests.get(URL, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("matches", [])
-    return []
+    try:
+        response = requests.get(URL, headers=headers, timeout=5)
+        if response.status_code == 200:
+            return response.json().get("matches", [])
+    except Exception:
+        pass
+    return None
 
 @st.cache_data(ttl=900, show_spinner=False)  # Se actualiza cada 15 minutos
-def obtener_tiempo():
-    # Coordenadas de Madrid (Cámbialas por tu ciudad: busca "Latitud Longitud [Tu Ciudad]" en Google)
-    lat = "41.6521"
-    lon = "-0.8809"
+def obtener_tiempo(lat="41.6521", lon="-0.8809"):
+    # Coordenadas configurables desde preferencias.json (por defecto Zaragoza)
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
     
     try:
-        res = requests.get(url)
+        res = requests.get(url, timeout=5)
         if res.status_code == 200:
             data = res.json().get("current_weather", {})
             temp = round(data.get("temperature", 0))
@@ -53,7 +54,7 @@ def obtener_tiempo():
             else: icono = "🌡️"
             
             return f"{icono} {temp}ºC"
-    except:
+    except Exception:
         pass
     return "" # Si falla, no muestra nada y no rompe la pantalla
 
@@ -180,27 +181,97 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- FUNCIONES DE BÚSQUEDA INTELIGENTE (A PRUEBA DE TILDES) ---
+def normalizar_texto(texto):
+    # Esta función quita las tildes y convierte a minúsculas
+    texto = unicodedata.normalize('NFD', texto)
+    return ''.join(c for c in texto if unicodedata.category(c) != 'Mn').lower()
+
+def es_equipo_fav(nombre_api, lista_favoritos):
+    nombre_api_norm = normalizar_texto(nombre_api)
+    for fav in lista_favoritos:
+        # Comparamos ambas palabras sin tildes y en minúsculas
+        if normalizar_texto(fav) in nombre_api_norm:
+            return True
+    return False
+
+def buscar_estadio_local(nombre_equipo, estadios_db):
+    # 1. Coincidencia exacta
+    if nombre_equipo in estadios_db:
+        return estadios_db[nombre_equipo]
+    # 2. Coincidencia flexible normalizada (ej: "Barcelona" <-> "FC Barcelona")
+    nombre_norm = normalizar_texto(nombre_equipo)
+    for equipo_key, estadio_val in estadios_db.items():
+        key_norm = normalizar_texto(equipo_key)
+        if nombre_norm in key_norm or key_norm in nombre_norm:
+            return estadio_val
+    return None
+
+def calcular_minuto_en_juego(match):
+    # Si la API o ESPN ya incluye el minuto/reloj del partido, lo usamos
+    minuto = match.get("minute")
+    if minuto:
+        minuto_str = str(minuto)
+        return minuto_str if "'" in minuto_str else f"{minuto_str}'"
+    # Si no viene en el JSON pero está IN_PLAY, lo estimamos desde utcDate
+    try:
+        utc_str = match['utcDate'].replace('Z', '+00:00')
+        inicio = datetime.fromisoformat(utc_str)
+        ahora = datetime.now(inicio.tzinfo)
+        transcurrido = int((ahora - inicio).total_seconds() // 60)
+        if 1 <= transcurrido <= 45:
+            return f"{transcurrido}'"
+        elif 45 < transcurrido <= 60:
+            return "45+'"
+        elif 60 < transcurrido <= 108:
+            # Restamos los ~15 minutos del descanso
+            min_segunda = min(90, transcurrido - 15)
+            return f"{min_segunda}'" if transcurrido - 15 <= 90 else "90+'"
+    except Exception:
+        pass
+    return ""
+# ------------------------------------------------------------
+
 preferencias = cargar_preferencias()
 estadios_db = cargar_estadios()
-clima_actual = obtener_tiempo()
-fecha_hoy = obtener_fecha_actual()
-hora_actual = datetime.now().strftime("%H:%M")
 
 if preferencias is None:
     st.info("Por favor, configura Pitch primero. (Crea el archivo preferencias.json)")
     st.stop()
 
+clima_cfg = preferencias.get("clima", {})
+lat_clima = clima_cfg.get("lat", "41.6521")
+lon_clima = clima_cfg.get("lon", "-0.8809")
+equipo_principal_id = preferencias.get("equipo_principal_id", 81)
+equipo_principal_nombre = preferencias.get("equipo_principal_nombre", "FC Barcelona")
+equipo_principal_estadio = preferencias.get("equipo_principal_estadio", "Spotify Camp Nou")
+noticias_query = preferencias.get("noticias_query", "FC Barcelona site:sport.es")
+
+clima_actual = obtener_tiempo(lat_clima, lon_clima)
+fecha_hoy = obtener_fecha_actual()
+hora_actual = datetime.now().strftime("%H:%M")
+
 # Rotación cada 10 segundos
 ciclo_actual = st_autorefresh(interval=10000, limit=None, key="rotacion_paginas")
 
-# --- MOTOR HÍBRIDO DE PARTIDOS ---
-matches = obtener_partidos()
+# --- MOTOR HÍBRIDO DE PARTIDOS (CON RESPALDO ANTE CORTES DE RED) ---
+matches_api = obtener_partidos()
+if matches_api is not None:
+    st.session_state["last_matches_api"] = matches_api
+else:
+    matches_api = st.session_state.get("last_matches_api", [])
+
 matches_extra = copas.obtener_partidos_extra()
-matches.extend(matches_extra) # Fusionamos ambas listas en una sola
+if matches_extra:
+    st.session_state["last_matches_extra"] = matches_extra
+elif "last_matches_extra" in st.session_state and matches_api is None:
+    matches_extra = st.session_state["last_matches_extra"]
+
+matches = list(matches_api) + list(matches_extra) # Fusionamos ambas listas en una sola
 
 if not matches:
     # 1. Obtenemos los próximos partidos usando el nuevo archivo
-    partidos_futuros = proximos.obtener_proximos(API_KEY)
+    partidos_futuros = proximos.obtener_proximos(API_KEY, equipo_principal_id)
     
     # 2. Renderizamos el Encabezado genérico (mantenemos el Reloj y el Clima)
     logo_url = cargar_logo_local("logo.png")
@@ -226,27 +297,12 @@ if not matches:
     st.markdown(header_html, unsafe_allow_html=True)
     
     # 3. Llamamos a nuestra función para pintar las filas
-    proximos.renderizar(partidos_futuros)
+    proximos.renderizar(partidos_futuros, equipo_principal_nombre, equipo_principal_estadio)
 else:
     # 1. Agrupar partidos por competición
     partidos_por_liga = {}
     ligas_fav = preferencias.get("ligas", [])
     equipos_fav = preferencias.get("equipos", [])
-    
-    # --- FUNCIÓN DE BÚSQUEDA INTELIGENTE (A PRUEBA DE TILDES) ---
-    def normalizar_texto(texto):
-        # Esta función quita las tildes y convierte a minúsculas
-        texto = unicodedata.normalize('NFD', texto)
-        return ''.join(c for c in texto if unicodedata.category(c) != 'Mn').lower()
-
-    def es_equipo_fav(nombre_api, lista_favoritos):
-        nombre_api_norm = normalizar_texto(nombre_api)
-        for fav in lista_favoritos:
-            # Comparamos ambas palabras sin tildes y en minúsculas
-            if normalizar_texto(fav) in nombre_api_norm:
-                return True
-        return False
-    # ------------------------------------------------------------
     
     # Diccionario para "traducir" los nombres sosos de la API a nombres comerciales
     nombres_comerciales = {
@@ -295,7 +351,7 @@ else:
     # Renderizado de la página activa
     if not paginas_a_mostrar:
         # Reutilizamos el estado vacío que llama a proximos.py si después de filtrar no queda nada
-        partidos_futuros = proximos.obtener_proximos(API_KEY)
+        partidos_futuros = proximos.obtener_proximos(API_KEY, equipo_principal_id)
         logo_url = cargar_logo_local("logo.png")
         mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">'
         
@@ -317,7 +373,7 @@ else:
             </div>
             </div>"""
         st.markdown(header_html, unsafe_allow_html=True)
-        proximos.renderizar(partidos_futuros)
+        proximos.renderizar(partidos_futuros, equipo_principal_nombre, equipo_principal_estadio)
     else:
         # Elegimos qué página toca mostrar en este ciclo
         indice_pagina = ciclo_actual % len(paginas_a_mostrar)
@@ -365,19 +421,17 @@ else:
             
             # --- Lógica de Estadio Enriquecida ---
             nombre_equipo_local = match['homeTeam']['name']
-
-            if nombre_equipo_local not in estadios_db:
-                registrar_estadio_faltante(nombre_equipo_local)
             
-            # Intentamos cogerlo de la API
+            # 1. Intentamos cogerlo de la API
             estadio = match.get('venue')
             
-            # Si la API no lo tiene (es None o vacío), miramos en nuestro JSON
+            # 2. Si la API no lo tiene (es None o vacío), miramos en nuestro JSON (con búsqueda flexible)
             if not estadio:
-                estadio = estadios_db.get(nombre_equipo_local)
+                estadio = buscar_estadio_local(nombre_equipo_local, estadios_db)
                 
-            # Si tampoco lo tenemos en el JSON, ponemos el genérico
+            # 3. Si tampoco lo tenemos en el JSON, lo anotamos como faltante y ponemos el genérico
             if not estadio:
+                registrar_estadio_faltante(nombre_equipo_local)
                 estadio = "Estadio Local"
 
             estado = match['status']
@@ -387,8 +441,10 @@ else:
             hora = local_time.strftime("%H:%M")
             
             if estado == "IN_PLAY":
-                # Verde neón brillante con el punto pulsante
-                estado_html = '<div style="color: #39FF14; display: flex; align-items: center;"><span class="punto-directo"></span> EN JUEGO</div>'
+                # Verde neón brillante con el punto pulsante y el minuto de juego
+                minuto_txt = calcular_minuto_en_juego(match)
+                etiqueta_vivo = f"EN JUEGO ({minuto_txt})" if minuto_txt else "EN JUEGO"
+                estado_html = f'<div style="color: #39FF14; display: flex; align-items: center;"><span class="punto-directo"></span> {etiqueta_vivo}</div>'
             elif estado == "PAUSED":
                 # Ámbar/Naranja neutro, sin animar
                 estado_html = '<div style="color: #FFB347;">DESCANSO</div>'
@@ -409,8 +465,11 @@ else:
             
             with col_partido:
                 if estado in ["IN_PLAY", "PAUSED", "FINISHED"]:
-                    goles_local = match.get('score', {}).get('fullTime', {}).get('home')
-                    goles_visitante = match.get('score', {}).get('fullTime', {}).get('away')
+                    score_obj = match.get('score', {})
+                    full_time = score_obj.get('fullTime', {}) or {}
+                    reg_time = score_obj.get('regularTime', {}) or {}
+                    goles_local = full_time.get('home') if full_time.get('home') is not None else reg_time.get('home')
+                    goles_visitante = full_time.get('away') if full_time.get('away') is not None else reg_time.get('away')
                     goles_local = goles_local if goles_local is not None else 0
                     goles_visitante = goles_visitante if goles_visitante is not None else 0
                     
@@ -431,4 +490,4 @@ else:
                 st.divider()
 
 # Renderizamos el Ticker de noticias en el pie de página (fuera de todos los if/else)
-ticker.renderizar()
+ticker.renderizar(noticias_query)

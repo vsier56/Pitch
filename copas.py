@@ -47,6 +47,7 @@ def obtener_partidos_extra():
                     fase_partido = tipo_estado.get("state", "pre")  # "pre", "in", "post"
                     completado = tipo_estado.get("completed", False)
                     nombre_estado = tipo_estado.get("name", "")
+                    reloj_partido = evento["status"].get("displayClock", "")
                     
                     if nombre_estado in ["STATUS_POSTPONED", "STATUS_CANCELED", "STATUS_SUSPENDED", "STATUS_DELAYED"]:
                         estado = "SUSPENDED"
@@ -71,6 +72,7 @@ def obtener_partidos_extra():
                         "homeTeam": {"name": home["team"]["name"], "crest": home["team"].get("logo", "")},
                         "awayTeam": {"name": away["team"]["name"], "crest": away["team"].get("logo", "")},
                         "status": estado,
+                        "minute": reloj_partido,
                         "utcDate": evento["date"],
                         "score": {"fullTime": {"home": goles_home, "away": goles_away}},
                         "venue": comp.get("venue", {}).get("fullName", "")

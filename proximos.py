@@ -3,25 +3,25 @@ import requests
 from datetime import datetime
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def obtener_proximos(api_key):
+def obtener_proximos(api_key, team_id=81):
     # TRUCO: El ID interno del FC Barcelona en football-data.org es el 81.
     # Al pedir directamente los partidos de un equipo, la API gratuita no nos bloquea.
-    url = "https://api.football-data.org/v4/teams/81/matches?status=SCHEDULED"
+    url = f"https://api.football-data.org/v4/teams/{team_id}/matches?status=SCHEDULED"
     headers = {"X-Auth-Token": api_key}
     
     try:
-        res = requests.get(url, headers=headers)
+        res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
             partidos = res.json().get("matches", [])
             # Cortamos la lista para devolver exactamente los próximos 4
             return partidos[:4]
-    except:
+    except Exception:
         pass
     return []
 
-def renderizar(partidos):
+def renderizar(partidos, nombre_equipo="FC Barcelona", estadio_local="Spotify Camp Nou"):
     if not partidos:
-        st.info("No hay partidos programados para el FC Barcelona.")
+        st.info(f"No hay partidos programados para {nombre_equipo}.")
         return
 
     total_partidos = len(partidos)
@@ -33,9 +33,9 @@ def renderizar(partidos):
         # Intentamos sacar el estadio de la API
         estadio = match.get('venue')
         if not estadio:
-            # Si la API no lo manda, deducimos el estadio si el Barça juega en casa
-            if match['homeTeam']['name'] == "FC Barcelona":
-                estadio = "Spotify Camp Nou"
+            # Si la API no lo manda, deducimos el estadio si juega en casa
+            if nombre_equipo.lower() in match['homeTeam']['name'].lower():
+                estadio = estadio_local
             else:
                 estadio = "Estadio Visitante"
                 

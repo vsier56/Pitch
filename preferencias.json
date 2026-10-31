@@ -1,0 +1,32 @@
+{
+    "ligas": [
+        "UEFA Champions League",
+        "FIFA World Cup",
+        "European Championship",
+        "Supercopa de España",
+        "Supercopa de Europa"
+    ],
+    "equipos": [
+        "FC Barcelona",
+        "Real Madrid",
+        "Atlético",
+        "Manchester City",
+        "Arsenal",
+        "Chelsea",
+        "Liverpool",
+        "Newcastle",
+        "Manchester United",
+        "Tottenham",
+        "Deportivo",
+        "Athletic Club",
+        "Villarreal"
+    ],
+    "equipo_principal_id": 81,
+    "equipo_principal_nombre": "FC Barcelona",
+    "equipo_principal_estadio": "Spotify Camp Nou",
+    "noticias_query": "FC Barcelona site:sport.es",
+    "clima": {
+        "lat": "41.6521",
+        "lon": "-0.8809"
+    }
+}

@@ -3,10 +3,12 @@ import requests
 import xml.etree.ElementTree as ET
 import streamlit.components.v1 as components
 import base64
+from urllib.parse import quote_plus
 
 @st.cache_data(ttl=1800)
-def obtener_noticias():
-    url = "https://news.google.com/rss/search?q=FC+Barcelona+site:sport.es&hl=es&gl=ES&ceid=ES:es"
+def obtener_noticias(query="FC Barcelona site:sport.es"):
+    q_encoded = quote_plus(query)
+    url = f"https://news.google.com/rss/search?q={q_encoded}&hl=es&gl=ES&ceid=ES:es"
     try:
         res = requests.get(url, timeout=5)
         if res.status_code == 200:
@@ -18,12 +20,12 @@ def obtener_noticias():
                 titulares.append(titulo.strip())
             if titulares:
                 return titulares
-    except:
+    except Exception:
         pass
     return ["Problemas de conexión con las noticias..."]
 
-def renderizar():
-    noticias = obtener_noticias()
+def renderizar(query="FC Barcelona site:sport.es"):
+    noticias = obtener_noticias(query)
     texto_ticker = " &nbsp;&nbsp;&nbsp; • &nbsp;&nbsp;&nbsp; ".join(noticias)
     
     # Montamos el texto final en HTML
