@@ -1,9 +1,13 @@
 import streamlit as st
+import proximos
+import ticker
+import copas
 import requests
 from datetime import datetime
 import json
 import os
 import base64
+import unicodedata
 from streamlit_autorefresh import st_autorefresh
 from dotenv import load_dotenv 
 
@@ -17,7 +21,7 @@ URL = "https://api.football-data.org/v4/matches"
 ARCHIVO_PREFS = "preferencias.json"
 MAX_PARTIDOS = 4 # Número máximo de partidos que caben en tu pantalla
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=60, show_spinner=False)
 def obtener_partidos():
     headers = {"X-Auth-Token": API_KEY}
     response = requests.get(URL, headers=headers)
@@ -25,7 +29,7 @@ def obtener_partidos():
         return response.json().get("matches", [])
     return []
 
-@st.cache_data(ttl=900)  # Se actualiza cada 15 minutos
+@st.cache_data(ttl=900, show_spinner=False)  # Se actualiza cada 15 minutos
 def obtener_tiempo():
     # Coordenadas de Madrid (Cámbialas por tu ciudad: busca "Latitud Longitud [Tu Ciudad]" en Google)
     lat = "41.6521"
@@ -56,7 +60,8 @@ def obtener_tiempo():
 
 def cargar_preferencias():
     if os.path.exists(ARCHIVO_PREFS):
-        with open(ARCHIVO_PREFS, "r") as archivo:
+        # Obligamos a leer en UTF-8 para que no rompa las tildes ni las eñes
+        with open(ARCHIVO_PREFS, "r", encoding="utf-8") as archivo:
             return json.load(archivo)
     return None
 
@@ -103,18 +108,24 @@ def cargar_logo_local(ruta):
 st.markdown("""
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">   
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">   
     <style>
         /* 1. Todo el panel usa Space Grotesk por defecto */
         * {
             font-family: 'Space Grotesk', sans-serif !important;
         }
         
-        #MainMenu, header, footer {visibility: hidden;}
+        /* 2. TRUCO DE ESPACIO: Matamos por completo la cabecera invisible de Streamlit */
+        #MainMenu, header, footer, [data-testid="stHeader"] {
+            visibility: hidden;
+            display: none !important;
+            height: 0px !important;
+        }
         
-        /* 2. Subimos el panel pegándolo arriba y dejamos margen abajo para el Ticker */
+        /* 3. TRUCO DE ESPACIO: Subimos el panel pegándolo arriba y dejamos margen abajo para el Ticker */
         .block-container {
             padding-top: 0rem !important; 
+            margin-top: -1.5rem !important; 
             padding-bottom: 4rem !important;
             max-width: 98% !important;
         }
@@ -123,22 +134,24 @@ st.markdown("""
             font-size: 14px !important;
         }
         
+        /* 4. TRUCO DE ESPACIO: Reducimos el aire debajo del encabezado (reloj/fecha) */
         .header-container {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem; 
             border-bottom: 2px solid #333;
-            padding-bottom: 1rem;
+            padding-bottom: 0.5rem; 
             margin-top: 0;
         }
 
-        /* 3. Clase exclusiva para que el marcador destaque */
+        /* Clase exclusiva para que el marcador destaque con Barlow Condensed Bold */
         .fuente-marcador {
-            font-family: 'Roboto Mono', monospace !important;
+            font-family: 'Barlow Condensed', sans-serif !important;
+            letter-spacing: 1px;
         }
 
-        /* 4. Animación para el punto pulsante de los partidos en directo */
+        /* Animación para el punto pulsante de los partidos en directo */
         @keyframes latido-verde {
             0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(57, 255, 20, 0.7); }
             70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(57, 255, 20, 0); }
@@ -148,11 +161,21 @@ st.markdown("""
         .punto-directo {
             width: 12px;
             height: 12px;
-            background-color: #39FF14; /* Verde Neón */
+            background-color: #39FF14;
             border-radius: 50%;
             display: inline-block;
             margin-right: 10px;
             animation: latido-verde 2s infinite;
+        }
+
+        /* 5. TRUCO NINJA: Matar el oscurecimiento (dimming) de Streamlit cuando recarga */
+        .element-container, 
+        [data-testid="stAppViewBlockContainer"],
+        [data-testid="stAppViewContainer"],
+        [data-testid="stVerticalBlock"] {
+            opacity: 1 !important;
+            filter: none !important;
+            transition: none !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -170,26 +193,60 @@ if preferencias is None:
 # Rotación cada 10 segundos
 ciclo_actual = st_autorefresh(interval=10000, limit=None, key="rotacion_paginas")
 
+# --- MOTOR HÍBRIDO DE PARTIDOS ---
 matches = obtener_partidos()
+matches_extra = copas.obtener_partidos_extra()
+matches.extend(matches_extra) # Fusionamos ambas listas en una sola
 
 if not matches:
-    st.title("Pitch")
-    st.info("No hay datos disponibles en la API hoy.")
+    # 1. Obtenemos los próximos partidos usando el nuevo archivo
+    partidos_futuros = proximos.obtener_proximos(API_KEY)
+    
+    # 2. Renderizamos el Encabezado genérico (mantenemos el Reloj y el Clima)
+    logo_url = cargar_logo_local("logo.png")
+    mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">'
+    
+    header_html = f"""<div class="header-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div style="flex: 1; display: flex; align-items: center;">
+        <div style="font-size: 2.2rem; font-weight: bold; color: #fff; display: flex; align-items: center; font-variant-numeric: tabular-nums;">
+        {mi_logo_html} <span style="margin-left: 8px;">{hora_actual}</span>
+        </div>
+        </div>
+        <div style="font-size: 1.4rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1.2; text-align: center;">
+        Próximos Partidos
+        </div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: flex-end;">
+        <div style="white-space: nowrap; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 1.1rem; font-weight: bold; color: #ddd;">{fecha_hoy}</span>
+        <span style="font-size: 1.1rem; color: #555;">|</span>
+        <span style="font-size: 1rem; color: #aaa; font-weight: normal;">{clima_actual}</span>
+        </div>
+        </div>
+        </div>"""
+    st.markdown(header_html, unsafe_allow_html=True)
+    
+    # 3. Llamamos a nuestra función para pintar las filas
+    proximos.renderizar(partidos_futuros)
 else:
     # 1. Agrupar partidos por competición
     partidos_por_liga = {}
     ligas_fav = preferencias.get("ligas", [])
     equipos_fav = preferencias.get("equipos", [])
     
-    # --- FUNCIÓN DE BÚSQUEDA FLEXIBLE ---
+    # --- FUNCIÓN DE BÚSQUEDA INTELIGENTE (A PRUEBA DE TILDES) ---
+    def normalizar_texto(texto):
+        # Esta función quita las tildes y convierte a minúsculas
+        texto = unicodedata.normalize('NFD', texto)
+        return ''.join(c for c in texto if unicodedata.category(c) != 'Mn').lower()
+
     def es_equipo_fav(nombre_api, lista_favoritos):
-        nombre_api_lower = nombre_api.lower()
+        nombre_api_norm = normalizar_texto(nombre_api)
         for fav in lista_favoritos:
-            # Comprueba si tu palabra clave (ej: "Betis") está dentro del nombre de la API
-            if fav.lower() in nombre_api_lower:
+            # Comparamos ambas palabras sin tildes y en minúsculas
+            if normalizar_texto(fav) in nombre_api_norm:
                 return True
         return False
-    # ------------------------------------
+    # ------------------------------------------------------------
     
     # Diccionario para "traducir" los nombres sosos de la API a nombres comerciales
     nombres_comerciales = {
@@ -237,8 +294,30 @@ else:
 
     # Renderizado de la página activa
     if not paginas_a_mostrar:
-        st.title("Pitch")
-        st.warning("Hoy no hay partidos de tus ligas o equipos favoritos.")
+        # Reutilizamos el estado vacío que llama a proximos.py si después de filtrar no queda nada
+        partidos_futuros = proximos.obtener_proximos(API_KEY)
+        logo_url = cargar_logo_local("logo.png")
+        mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">'
+        
+        header_html = f"""<div class="header-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div style="flex: 1; display: flex; align-items: center;">
+            <div style="font-size: 2.2rem; font-weight: bold; color: #fff; display: flex; align-items: center; font-variant-numeric: tabular-nums;">
+            {mi_logo_html} <span style="margin-left: 8px;">{hora_actual}</span>
+            </div>
+            </div>
+            <div style="font-size: 1.4rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1.2; text-align: center;">
+            Próximos Partidos
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: flex-end;">
+            <div style="white-space: nowrap; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.1rem; font-weight: bold; color: #ddd;">{fecha_hoy}</span>
+            <span style="font-size: 1.1rem; color: #555;">|</span>
+            <span style="font-size: 1rem; color: #aaa; font-weight: normal;">{clima_actual}</span>
+            </div>
+            </div>
+            </div>"""
+        st.markdown(header_html, unsafe_allow_html=True)
+        proximos.renderizar(partidos_futuros)
     else:
         # Elegimos qué página toca mostrar en este ciclo
         indice_pagina = ciclo_actual % len(paginas_a_mostrar)
@@ -278,7 +357,9 @@ else:
         st.markdown(header_html, unsafe_allow_html=True)
         
         # --- FILAS DE PARTIDOS ---
-        for match in pagina_activa["partidos"]:
+        total_partidos = len(pagina_activa["partidos"])
+        
+        for idx, match in enumerate(pagina_activa["partidos"]):
             escudo_local = match['homeTeam'].get('crest', '')
             escudo_visitante = match['awayTeam'].get('crest', '')
             
@@ -314,6 +395,9 @@ else:
             elif estado == "FINISHED":
                 # Gris muy apagado, se funde con el fondo
                 estado_html = '<div style="color: #555555;">FINALIZADO</div>'
+            elif estado in ["SUSPENDED", "POSTPONED", "CANCELLED"]:
+                # Rojo de alerta para partidos suspendidos o aplazados
+                estado_html = '<div style="color: #FF4444; font-weight: bold;">SUSPENDIDO</div>'
             else:
                 # Hora del partido (gris claro)
                 estado_html = f'<div style="color: #aaaaaa;">{hora}</div>'
@@ -330,14 +414,21 @@ else:
                     goles_local = goles_local if goles_local is not None else 0
                     goles_visitante = goles_visitante if goles_visitante is not None else 0
                     
-                    elemento_central = f'<div style="background-color: #222; border-radius: 8px; padding: 5px 25px; margin: 0 20px; border: 1px solid #444; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"><span class="fuente-marcador" style="font-size: 2.2rem; font-weight: bold; color: #fff;">{goles_local} - {goles_visitante}</span></div>'
+                    # Marcador centrado, compacto y con line-height 1 para evitar aire extra
+                    elemento_central = f'<div style="background-color: #222; border-radius: 8px; padding: 4px 20px; margin: 0 20px; border: 1px solid #444; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: flex; align-items: center;"><span class="fuente-marcador" style="font-size: 2.8rem; font-weight: bold; color: #fff; line-height: 1;">{goles_local} - {goles_visitante}</span></div>'
                 else:
                     elemento_central = '<span style="color: #555; font-size: 1.5rem; margin: 0 30px;">vs</span>'
 
-                html_equipos = f'<div style="display: flex; align-items: center; justify-content: center; height: 100%;"><img src="{escudo_local}" width="50" style="display: block;">{elemento_central}<img src="{escudo_visitante}" width="50" style="display: block;"></div>'                
+                # Margin-top rebajado a 5px
+                html_equipos = f'<div style="display: flex; align-items: center; justify-content: center; height: 100%; margin-top: 5px;"><img src="{escudo_local}" width="50" style="display: block;">{elemento_central}<img src="{escudo_visitante}" width="50" style="display: block;"></div>'                
                 st.markdown(html_equipos, unsafe_allow_html=True)
                 
             with col_estado:
-                # Quitamos el texto duro y metemos el HTML dinámico que acabamos de crear
                 st.markdown(f"<div style='height: 100%; display: flex; align-items: center; justify-content: flex-end; font-size: 1.4rem; font-weight: bold;'>{estado_html}</div>", unsafe_allow_html=True)    
-            st.divider()
+            
+            # Control de la línea separadora
+            if idx < total_partidos - 1:
+                st.divider()
+
+# Renderizamos el Ticker de noticias en el pie de página (fuera de todos los if/else)
+ticker.renderizar()
