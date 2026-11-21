@@ -63,8 +63,10 @@ def obtener_partidos_extra():
                     # ----------------------------------------
 
                     # Goles
-                    goles_home = int(home.get("score", 0)) if home.get("score") else None
-                    goles_away = int(away.get("score", 0)) if away.get("score") else None
+                    raw_home = home.get("score")
+                    raw_away = away.get("score")
+                    goles_home = int(raw_home) if raw_home is not None and str(raw_home).strip() != "" else None
+                    goles_away = int(raw_away) if raw_away is not None and str(raw_away).strip() != "" else None
 
                     # Creamos un "clon" del formato de football-data.org
                     partido_clon = {

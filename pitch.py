@@ -4,6 +4,7 @@ import ticker
 import copas
 import requests
 from datetime import datetime
+import html
 import json
 import os
 import base64
@@ -230,6 +231,55 @@ def calcular_minuto_en_juego(match):
     except Exception:
         pass
     return ""
+
+ESTADOS_EN_JUEGO = {"IN_PLAY", "LIVE"}
+ESTADOS_PAUSA = {"PAUSED", "HALFTIME"}
+ESTADOS_FINALES = {"FINISHED", "AWARDED", "AFTER_EXTRA_TIME", "AFTER_PENALTIES", "FULL_TIME"}
+ESTADOS_NO_INICIADOS = {"TIMED", "SCHEDULED", "POSTPONED", "CANCELLED", "SUSPENDED"}
+
+def es_estado_finalizado(estado):
+    return str(estado or "").strip().upper() in ESTADOS_FINALES
+
+def extraer_marcador(match):
+    score_obj = match.get("score") or {}
+    for periodo in ("fullTime", "regularTime", "halfTime"):
+        bloque = score_obj.get(periodo) or {}
+        home = bloque.get("home")
+        away = bloque.get("away")
+        if home is not None and away is not None:
+            return home, away
+    full_time = score_obj.get("fullTime") or {}
+    reg_time = score_obj.get("regularTime") or {}
+    half_time = score_obj.get("halfTime") or {}
+    goles_local = next((v for v in (full_time.get("home"), reg_time.get("home"), half_time.get("home")) if v is not None), None)
+    goles_visitante = next((v for v in (full_time.get("away"), reg_time.get("away"), half_time.get("away")) if v is not None), None)
+    return goles_local, goles_visitante
+
+def renderizar_panel_proximos(panel_principal, api_key, equipo_id, equipo_nombre, equipo_estadio, hora_actual, fecha_hoy, clima_actual):
+    partidos_futuros = proximos.obtener_proximos(api_key, equipo_id)
+    logo_url = cargar_logo_local("logo.png")
+    mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">'
+
+    header_html = f"""<div class="header-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div style="flex: 1; display: flex; align-items: center;">
+        <div style="font-size: 2.2rem; font-weight: bold; color: #fff; display: flex; align-items: center; font-variant-numeric: tabular-nums;">
+        {mi_logo_html} <span style="margin-left: 8px;">{hora_actual}</span>
+        </div>
+        </div>
+        <div style="font-size: 1.4rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1.2; text-align: center;">
+        Próximos Partidos
+        </div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: flex-end;">
+        <div style="white-space: nowrap; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 1.1rem; font-weight: bold; color: #ddd;">{fecha_hoy}</span>
+        <span style="font-size: 1.1rem; color: #555;">|</span>
+        <span style="font-size: 1rem; color: #aaa; font-weight: normal;">{clima_actual}</span>
+        </div>
+        </div>
+        </div>"""
+    with panel_principal.container():
+        st.markdown(header_html, unsafe_allow_html=True)
+        proximos.renderizar(partidos_futuros, equipo_nombre, equipo_estadio)
 # ------------------------------------------------------------
 
 preferencias = cargar_preferencias()
@@ -252,7 +302,7 @@ fecha_hoy = obtener_fecha_actual()
 hora_actual = datetime.now().strftime("%H:%M")
 
 # Rotación cada 10 segundos
-ciclo_actual = st_autorefresh(interval=10000, limit=None, key="rotacion_paginas")
+ciclo_actual = st_autorefresh(interval=10000, limit=None, key="rotacion_paginas") or 0
 
 # --- MOTOR HÍBRIDO DE PARTIDOS (CON RESPALDO ANTE CORTES DE RED) ---
 matches_api = obtener_partidos()
@@ -269,35 +319,19 @@ elif "last_matches_extra" in st.session_state and matches_api is None:
 
 matches = list(matches_api) + list(matches_extra) # Fusionamos ambas listas en una sola
 
+panel_principal = st.empty()
+
 if not matches:
-    # 1. Obtenemos los próximos partidos usando el nuevo archivo
-    partidos_futuros = proximos.obtener_proximos(API_KEY, equipo_principal_id)
-    
-    # 2. Renderizamos el Encabezado genérico (mantenemos el Reloj y el Clima)
-    logo_url = cargar_logo_local("logo.png")
-    mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">'
-    
-    header_html = f"""<div class="header-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-        <div style="flex: 1; display: flex; align-items: center;">
-        <div style="font-size: 2.2rem; font-weight: bold; color: #fff; display: flex; align-items: center; font-variant-numeric: tabular-nums;">
-        {mi_logo_html} <span style="margin-left: 8px;">{hora_actual}</span>
-        </div>
-        </div>
-        <div style="font-size: 1.4rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1.2; text-align: center;">
-        Próximos Partidos
-        </div>
-        <div style="flex: 1; display: flex; flex-direction: column; align-items: flex-end;">
-        <div style="white-space: nowrap; display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 1.1rem; font-weight: bold; color: #ddd;">{fecha_hoy}</span>
-        <span style="font-size: 1.1rem; color: #555;">|</span>
-        <span style="font-size: 1rem; color: #aaa; font-weight: normal;">{clima_actual}</span>
-        </div>
-        </div>
-        </div>"""
-    st.markdown(header_html, unsafe_allow_html=True)
-    
-    # 3. Llamamos a nuestra función para pintar las filas
-    proximos.renderizar(partidos_futuros, equipo_principal_nombre, equipo_principal_estadio)
+    renderizar_panel_proximos(
+        panel_principal,
+        API_KEY,
+        equipo_principal_id,
+        equipo_principal_nombre,
+        equipo_principal_estadio,
+        hora_actual,
+        fecha_hoy,
+        clima_actual,
+    )
 else:
     # 1. Agrupar partidos por competición
     partidos_por_liga = {}
@@ -351,39 +385,28 @@ else:
     # Renderizado de la página activa
     if not paginas_a_mostrar:
         # Reutilizamos el estado vacío que llama a proximos.py si después de filtrar no queda nada
-        partidos_futuros = proximos.obtener_proximos(API_KEY, equipo_principal_id)
-        logo_url = cargar_logo_local("logo.png")
-        mi_logo_html = f'<img src="{logo_url}" height="50" style="margin-right: 10px; vertical-align: middle;">'
-        
-        header_html = f"""<div class="header-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-            <div style="flex: 1; display: flex; align-items: center;">
-            <div style="font-size: 2.2rem; font-weight: bold; color: #fff; display: flex; align-items: center; font-variant-numeric: tabular-nums;">
-            {mi_logo_html} <span style="margin-left: 8px;">{hora_actual}</span>
-            </div>
-            </div>
-            <div style="font-size: 1.4rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1.2; text-align: center;">
-            Próximos Partidos
-            </div>
-            <div style="flex: 1; display: flex; flex-direction: column; align-items: flex-end;">
-            <div style="white-space: nowrap; display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.1rem; font-weight: bold; color: #ddd;">{fecha_hoy}</span>
-            <span style="font-size: 1.1rem; color: #555;">|</span>
-            <span style="font-size: 1rem; color: #aaa; font-weight: normal;">{clima_actual}</span>
-            </div>
-            </div>
-            </div>"""
-        st.markdown(header_html, unsafe_allow_html=True)
-        proximos.renderizar(partidos_futuros, equipo_principal_nombre, equipo_principal_estadio)
+        renderizar_panel_proximos(
+            panel_principal,
+            API_KEY,
+            equipo_principal_id,
+            equipo_principal_nombre,
+            equipo_principal_estadio,
+            hora_actual,
+            fecha_hoy,
+            clima_actual,
+        )
     else:
         # Elegimos qué página toca mostrar en este ciclo
         indice_pagina = ciclo_actual % len(paginas_a_mostrar)
         pagina_activa = paginas_a_mostrar[indice_pagina]
         
-       # --- ENCABEZADO ---
+        # --- ENCABEZADO ---
         # Detectamos si es la Premier para hacer su logo más grande
         altura_logo = "60" if pagina_activa["liga"] == "Premier League" else "35"
         
-        logo_comp_html = f'<img src="{pagina_activa["emblema"]}" height="{altura_logo}" style="margin-right: 15px; vertical-align: middle;">' if pagina_activa["emblema"] else ''
+        emblema_url = html.escape(pagina_activa["emblema"] or "", quote=True)
+        logo_comp_html = f'<img src="{emblema_url}" height="{altura_logo}" style="margin-right: 15px; vertical-align: middle;">' if pagina_activa["emblema"] else ''
+        liga_html = html.escape(pagina_activa["liga"])
         
         texto_paginacion = f"Pág {pagina_activa['pag_actual']} de {pagina_activa['pag_total']}" if pagina_activa['pag_total'] > 1 else ""
         
@@ -399,7 +422,7 @@ else:
             </div>
             </div>
             <div style="font-size: 1.4rem; font-weight: bold; color: #ddd; display: flex; align-items: center; justify-content: center; flex: 1.2; text-align: center;">
-            {logo_comp_html} {pagina_activa["liga"]}
+            {logo_comp_html} {liga_html}
             </div>
             <div style="flex: 1; display: flex; flex-direction: column; align-items: flex-end;">
             <div style="white-space: nowrap; display: flex; align-items: center; gap: 8px;">
@@ -410,14 +433,14 @@ else:
             <span style="font-size: 0.9rem; color: #888; font-weight: normal; margin-top: 4px;">{texto_paginacion}</span>
             </div>
             </div>"""
-        st.markdown(header_html, unsafe_allow_html=True)
         
         # --- FILAS DE PARTIDOS ---
         total_partidos = len(pagina_activa["partidos"])
+        filas_html = []
         
         for idx, match in enumerate(pagina_activa["partidos"]):
-            escudo_local = match['homeTeam'].get('crest', '')
-            escudo_visitante = match['awayTeam'].get('crest', '')
+            escudo_local = html.escape(match['homeTeam'].get('crest', '') or '', quote=True)
+            escudo_visitante = html.escape(match['awayTeam'].get('crest', '') or '', quote=True)
             
             # --- Lógica de Estadio Enriquecida ---
             nombre_equipo_local = match['homeTeam']['name']
@@ -434,60 +457,59 @@ else:
                 registrar_estadio_faltante(nombre_equipo_local)
                 estadio = "Estadio Local"
 
-            estado = match['status']
+            estadio_html = html.escape(str(estadio))
+            estado = str(match.get('status', '') or '').strip().upper()
+            finalizado = es_estado_finalizado(estado)
+            goles_local, goles_visitante = extraer_marcador(match)
             
             utc_str = match['utcDate'].replace('Z', '+00:00')
             local_time = datetime.fromisoformat(utc_str).astimezone()
             hora = local_time.strftime("%H:%M")
             
-            if estado == "IN_PLAY":
+            if estado in ESTADOS_EN_JUEGO:
                 # Verde neón brillante con el punto pulsante y el minuto de juego
                 minuto_txt = calcular_minuto_en_juego(match)
                 etiqueta_vivo = f"EN JUEGO ({minuto_txt})" if minuto_txt else "EN JUEGO"
                 estado_html = f'<div style="color: #39FF14; display: flex; align-items: center;"><span class="punto-directo"></span> {etiqueta_vivo}</div>'
-            elif estado == "PAUSED":
+            elif estado in ESTADOS_PAUSA:
                 # Ámbar/Naranja neutro, sin animar
                 estado_html = '<div style="color: #FFB347;">DESCANSO</div>'
-            elif estado == "FINISHED":
+            elif finalizado:
                 # Gris muy apagado, se funde con el fondo
                 estado_html = '<div style="color: #555555;">FINALIZADO</div>'
-            elif estado in ["SUSPENDED", "POSTPONED", "CANCELLED"]:
+            elif estado in {"SUSPENDED", "POSTPONED", "CANCELLED"}:
                 # Rojo de alerta para partidos suspendidos o aplazados
                 estado_html = '<div style="color: #FF4444; font-weight: bold;">SUSPENDIDO</div>'
             else:
                 # Hora del partido (gris claro)
                 estado_html = f'<div style="color: #aaaaaa;">{hora}</div>'
-                
-            col_estadio, col_partido, col_estado = st.columns([1.5, 3, 1.5], vertical_alignment="center") 
-            
-            with col_estadio:
-                st.markdown(f'<div style="text-align: left; color: #aaaaaa; font-size: 1.1em; font-weight: 400;">{estadio}</div>', unsafe_allow_html=True)    
-            
-            with col_partido:
-                if estado in ["IN_PLAY", "PAUSED", "FINISHED"]:
-                    score_obj = match.get('score', {})
-                    full_time = score_obj.get('fullTime', {}) or {}
-                    reg_time = score_obj.get('regularTime', {}) or {}
-                    goles_local = full_time.get('home') if full_time.get('home') is not None else reg_time.get('home')
-                    goles_visitante = full_time.get('away') if full_time.get('away') is not None else reg_time.get('away')
-                    goles_local = goles_local if goles_local is not None else 0
-                    goles_visitante = goles_visitante if goles_visitante is not None else 0
-                    
-                    # Marcador centrado, compacto y con line-height 1 para evitar aire extra
-                    elemento_central = f'<div style="background-color: #222; border-radius: 8px; padding: 4px 20px; margin: 0 20px; border: 1px solid #444; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: flex; align-items: center;"><span class="fuente-marcador" style="font-size: 2.8rem; font-weight: bold; color: #fff; line-height: 1;">{goles_local} - {goles_visitante}</span></div>'
-                else:
-                    elemento_central = '<span style="color: #555; font-size: 1.5rem; margin: 0 30px;">vs</span>'
 
-                # Margin-top rebajado a 5px
-                html_equipos = f'<div style="display: flex; align-items: center; justify-content: center; height: 100%; margin-top: 5px;"><img src="{escudo_local}" width="50" style="display: block;">{elemento_central}<img src="{escudo_visitante}" width="50" style="display: block;"></div>'                
-                st.markdown(html_equipos, unsafe_allow_html=True)
-                
-            with col_estado:
-                st.markdown(f"<div style='height: 100%; display: flex; align-items: center; justify-content: flex-end; font-size: 1.4rem; font-weight: bold;'>{estado_html}</div>", unsafe_allow_html=True)    
+            mostrar_marcador = (
+                estado in ESTADOS_EN_JUEGO
+                or estado in ESTADOS_PAUSA
+                or finalizado
+                or (goles_local is not None and goles_visitante is not None and estado not in ESTADOS_NO_INICIADOS)
+            )
+            if mostrar_marcador:
+                goles_local_vis = goles_local if goles_local is not None else 0
+                goles_visitante_vis = goles_visitante if goles_visitante is not None else 0
+                elemento_central = f'<div style="background-color: #222; border-radius: 8px; padding: 4px 20px; margin: 0 20px; border: 1px solid #444; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: flex; align-items: center;"><span class="fuente-marcador" style="font-size: 2.8rem; font-weight: bold; color: #fff; line-height: 1;">{goles_local_vis} - {goles_visitante_vis}</span></div>'
+            else:
+                elemento_central = '<span style="color: #555; font-size: 1.5rem; margin: 0 30px;">vs</span>'
+
+            fila_html = f"""<div style="display: grid; grid-template-columns: 1.5fr 3fr 1.5fr; align-items: center; gap: 1rem; padding: 0.75rem 0;">
+                <div style="text-align: left; color: #aaaaaa; font-size: 1.1em; font-weight: 400;">{estadio_html}</div>
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%; margin-top: 5px;"><img src="{escudo_local}" width="50" style="display: block;">{elemento_central}<img src="{escudo_visitante}" width="50" style="display: block;"></div>
+                <div style="height: 100%; display: flex; align-items: center; justify-content: flex-end; font-size: 1.4rem; font-weight: bold;">{estado_html}</div>
+            </div>"""
+            filas_html.append(fila_html)
             
             # Control de la línea separadora
             if idx < total_partidos - 1:
-                st.divider()
+                filas_html.append('<hr style="border: none; border-top: 1px solid rgba(250, 250, 250, 0.2); margin: 0.75rem 0;">')
+
+        pagina_html = f'<div data-pitch-page="{indice_pagina}-{ciclo_actual}">{header_html}{"".join(filas_html)}</div>'
+        panel_principal.html(pagina_html)
 
 # Renderizamos el Ticker de noticias en el pie de página (fuera de todos los if/else)
 ticker.renderizar(noticias_query)
